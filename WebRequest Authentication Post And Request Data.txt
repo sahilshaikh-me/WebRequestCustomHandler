@@ -1,0 +1,99 @@
+using System.Collections;
+using System.Collections.Generic;
+using System.Text;
+using UnityEngine;
+using UnityEngine.Networking;
+using WanzyeeStudio.Json;
+
+public class ApiManager : MonoBehaviour
+{
+    public string razorpayKey;
+    public string razorpaySecret;
+    public string razorpayOrderIdUrl;
+    public string razorpayCreateOrderUrl;
+
+    void Start()
+    {
+        StartCoroutine(CreateOrder());
+    }
+
+    IEnumerator CreateOrder()
+    {
+        // Create the order data
+        Dictionary<string, object> orderData = new Dictionary<string, object>();
+        orderData.Add("amount", 500); // Amount in paise
+        orderData.Add("currency", "INR");
+        orderData.Add("receipt", "qwsaq1");
+        orderData.Add("partial_payment", true);
+        orderData.Add("first_payment_min_amount", 230);
+
+        // Create the request body as JSON
+        string jsonPayload = DictionaryToJson(orderData);// JsonUtility.ToJson(orderData);
+
+        Debug.Log(jsonPayload);
+        // Create the UnityWebRequest object and set its properties
+        UnityWebRequest www = UnityWebRequest.Post(razorpayCreateOrderUrl, "POST");
+        byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonPayload);
+        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
+        www.downloadHandler = new DownloadHandlerBuffer();
+        www.SetRequestHeader("Content-Type", "application/json");
+        www.SetRequestHeader("Authorization", "Basic " + System.Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(razorpayKey + ":" + razorpaySecret)));
+
+        // Send the request
+        yield return www.SendWebRequest();
+
+        if (www.result == UnityWebRequest.Result.Success)
+        {
+            // Parse the response JSON to get the order ID
+           string responseJson = www.downloadHandler.text;
+            Debug.Log(responseJson);
+            Dictionary<string, object> responseData = (Dictionary<string, object>)JsonUtility.FromJson(responseJson, typeof(Dictionary<string, object>));
+            string orderId = (string)responseData["id"];
+
+            //// Use the order ID to redirect to the Razorpay payment page
+            string redirectUrl = razorpayOrderIdUrl + orderId;
+            Debug.Log("Redirecting to " + redirectUrl);
+            Application.OpenURL(redirectUrl);
+        }
+        else
+        {
+           // Debug.Log("Error creating order: " + www.error);
+        }
+    }
+
+    private string DictionaryToJson(Dictionary<string, object> data)
+    {
+        StringBuilder builder = new StringBuilder("{");
+
+        foreach (KeyValuePair<string, object> pair in data)
+        {
+            builder.AppendFormat("\"{0}\":", pair.Key);
+
+            if (pair.Value is string)
+            {
+                builder.AppendFormat("\"{0}\",", pair.Value);
+            }
+            else if (pair.Value is bool)
+            {
+                builder.AppendFormat("{0},", pair.Value.ToString().ToLower());
+            }
+            else if (pair.Value is Dictionary<string, object>)
+            {
+                builder.AppendFormat("{0},", DictionaryToJson((Dictionary<string, object>)pair.Value));
+            }
+            else
+            {
+                builder.AppendFormat("{0},", pair.Value);
+            }
+        }
+
+        if (builder[builder.Length - 1] == ',')
+        {
+            builder.Remove(builder.Length - 1, 1);
+        }
+
+        builder.Append("}");
+
+        return builder.ToString();
+    }
+}
